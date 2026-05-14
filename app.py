@@ -29,15 +29,17 @@ st.title("Myanmar Quantum Trader")
 if st.button("ဈေးကွက်စစ်ဆေးမည်"):
     with st.spinner("ဈေးနှုန်း ရယူနေပါသည်..."):
         try:
-            # Exchange အစား Yahoo Finance မှ ရွှေဈေး (GC=F) သို့မဟုတ် BTC ကို ယူခြင်း
+            # Yahoo Finance မှ BTC-USD ကို ယူခြင်း
             data = yf.download("BTC-USD", period="1d", interval="1m")
             if not data.empty:
-                price = data['Close'].iloc[-1]
+                # .item() ထည့်ခြင်းဖြင့် Format Error ကို ဖြေရှင်းသည်
+                price = data['Close'].iloc[-1].item() 
                 
                 # Quantum Analysis
-                q_score = run_quantum_logic(50) # Sample Score
+                q_score = run_quantum_logic(50) 
                 action = "BUY" if q_score > 0.52 else "SELL" if q_score < 0.48 else "WAIT"
                 
+                # Dashboard တွင် ပြသခြင်း
                 st.metric(label="BTC/USD Price", value=f"${price:,.2f}")
                 st.write(f"Quantum Probability: {q_score:.2%}")
                 
