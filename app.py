@@ -7,15 +7,15 @@ from telegram import Bot
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 
-# --- CONFIGURATION ---
-TOKEN = "8797384581:AAHN2awLJgzsUPnJgOBr4WFBM2E-ysscUE4"
+# --- CONFIGURATION (နောက်ဆုံးပေးထားသော Token နှင့် Chat ID) ---
+TOKEN = "8140108107:AAH1AEOF1pZzYRNkDDm1v4ylvBHC-IcQIhM"
 CHAT_ID = "8344079627"
 TRADE_AED = 500
 
-# ၁ မိနစ်တစ်ခါ Auto-refresh
-st_autorefresh(interval=1 * 60 * 1000, key="ai_agent_with_report")
+# ၁ မိနစ်တစ်ခါ Auto-refresh လုပ်ရန်
+st_autorefresh(interval=1 * 60 * 1000, key="ai_agent_final_v8")
 
-# Data Storage for Daily Report
+# ဒေတာသိမ်းဆည်းရန် Session State
 if "history" not in st.session_state:
     st.session_state.history = []
 if "daily_stats" not in st.session_state:
@@ -40,8 +40,8 @@ def calculate_rsi(series, window=14):
     rs = ema_up / ema_down
     return 100 - (100 / (1 + rs))
 
-st.title("🤖 AI Agent Forex Master")
-st.markdown(f"**Live Monitoring** | **Capital:** {TRADE_AED} AED")
+st.title("🤖 AI Agent Forex Master V8")
+st.markdown(f"**Status:** Connected with New Bot | **Capital:** {TRADE_AED} AED")
 
 major_pairs = {
     "EUR/USD (Euro)": "EURUSD=X",
@@ -62,15 +62,12 @@ try:
         current_price = float(close_prices.iloc[-1])
         current_rsi = float(rsi_series.iloc[-1])
         
-        # Quantum Score Calculation
         momentum = float(close_prices.diff().iloc[-1])
         q_score = 0.5 + (0.05 if momentum > 0 else -0.05)
 
-        # AI Agent Processing
         analysis_result = technical_analyst_agent(current_rsi)
         final_decision = decision_agent(analysis_result, q_score)
 
-        # Dashboard UI
         c1, c2, c3 = st.columns(3)
         p_fmt = "{:.5f}" if "USD" in asset_label else "{:.2f}"
         c1.metric("Live Price", p_fmt.format(current_price))
@@ -79,22 +76,26 @@ try:
 
         st.info(f"🧠 **AI Decision:** {final_decision}")
 
-        # Notification & Stats Logging
+        # Signal Notification Logic
         if final_decision in ["CONFIRMED_BUY", "CONFIRMED_SELL"]:
-            h_key = f"v6_{ticker_symbol}_{final_decision}_{datetime.now().hour}"
+            h_key = f"v8_{ticker_symbol}_{final_decision}_{datetime.now().hour}"
             if h_key not in st.session_state:
                 now = datetime.now().strftime("%H:%M:%S")
                 trade_action = "BUY 🟢" if "BUY" in final_decision else "SELL 🔴"
                 
                 async def send_signal():
-                    bot = Bot(token=TOKEN)
-                    msg = (f"🤖 **AI SIGNAL**\nAsset: {asset_label}\n"
-                           f"Action: {trade_action}\nPrice: {p_fmt.format(current_price)}")
-                    await bot.send_message(chat_id=CHAT_ID, text=msg)
+                    try:
+                        bot = Bot(token=TOKEN)
+                        msg = (f"🚀 **NEW SIGNAL (V8)**\nAsset: {asset_label}\n"
+                               f"Action: {trade_action}\nPrice: {p_fmt.format(current_price)}\n"
+                               f"Time: {now}")
+                        await bot.send_message(chat_id=CHAT_ID, text=msg)
+                    except Exception as e:
+                        st.error(f"Telegram Noti Error: {e}")
 
                 asyncio.run(send_signal())
                 
-                # Update Daily Statistics
+                # Update Report Stats
                 st.session_state.history.append({"Pair": asset_label, "Time": now, "Action": trade_action, "Price": p_fmt.format(current_price)})
                 st.session_state.daily_stats["Total"] += 1
                 if "BUY" in trade_action: st.session_state.daily_stats["Buy"] += 1
@@ -104,26 +105,22 @@ try:
     # --- DAILY REPORT SECTION ---
     st.divider()
     st.subheader("📊 Daily Trading Report")
-    col_a, col_b, col_c = st.columns(3)
-    col_a.metric("Total Signals", st.session_state.daily_stats["Total"])
-    col_b.metric("Buy Signals", st.session_state.daily_stats["Buy"])
-    col_c.metric("Sell Signals", st.session_state.daily_stats["Sell"])
+    ra, rb, rc = st.columns(3)
+    ra.metric("Total Signals", st.session_state.daily_stats["Total"])
+    rb.metric("Buy", st.session_state.daily_stats["Buy"])
+    rc.metric("Sell", st.session_state.daily_stats["Sell"])
 
     if st.session_state.history:
         st.table(pd.DataFrame(st.session_state.history).tail(10))
         
-        # Report ပို့ရန် Button
-        if st.button("Send Daily Report to Telegram"):
-            async def send_report():
+        if st.button("Send Report to Telegram"):
+            async def send_daily():
                 bot = Bot(token=TOKEN)
-                report_msg = (f"📋 **DAILY SUMMARY REPORT**\n"
-                              f"Date: {datetime.now().strftime('%Y-%m-%d')}\n"
-                              f"Total Signals: {st.session_state.daily_stats['Total']}\n"
-                              f"Buy: {st.session_state.daily_stats['Buy']} | Sell: {st.session_state.daily_stats['Sell']}\n"
-                              f"Estimated Volume: {st.session_state.daily_stats['Total'] * TRADE_AED} AED")
-                await bot.send_message(chat_id=CHAT_ID, text=report_msg)
-            asyncio.run(send_report())
-            st.success("Daily Report ကို ပို့လိုက်ပါပြီဗျာ!")
+                rep = (f"📋 **DAILY SUMMARY**\nSignals: {st.session_state.daily_stats['Total']}\n"
+                       f"Capital Used: {st.session_state.daily_stats['Total'] * TRADE_AED} AED")
+                await bot.send_message(chat_id=CHAT_ID, text=rep)
+            asyncio.run(send_daily())
+            st.success("Report Sent Successfully!")
 
 except Exception as e:
     st.error(f"System Error: {e}")
