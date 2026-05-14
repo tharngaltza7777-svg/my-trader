@@ -13,7 +13,6 @@ CHAT_ID = "8344079627"
 
 st_autorefresh(interval=3 * 60 * 1000, key="bot_loop")
 
-# Session State ထဲမှာ Signal History ကို သိမ်းရန်
 if "history" not in st.session_state:
     st.session_state.history = []
 
@@ -26,15 +25,22 @@ def calculate_rsi(series, window=14):
     rs = ema_up / ema_down
     return 100 - (100 / (1 + rs))
 
-st.title("🤖 Master Auto-Pilot & Daily Tracker")
+st.title("🤖 Multi-Asset Auto-Pilot Trader")
+
+# --- ASSET SELECTION ---
+# Commodities နှင့် Crypto တွဲဖက်ပေးထားခြင်း
+asset_choice = st.selectbox("ကြည့်ရှုမည့် Pair ကို ရွေးချယ်ပါ", 
+    ["BTC-USD", "GC=F (Gold)", "SI=F (Silver)", "CL=F (Crude Oil)", "ETH-USD"])
+
+# yfinance အတွက် Symbol ပြန်ညှိခြင်း
+ticker_symbol = asset_choice.split(" ")[0]
 
 try:
-    ticker = yf.Ticker("BTC-USD")
+    ticker = yf.Ticker(ticker_symbol)
     df = ticker.history(period="5d", interval="1m")
     
     if not df.empty and len(df) > 20:
         df['RSI'] = calculate_rsi(df['Close'])
-        df['SMA'] = df['Close'].rolling(window=20).mean()
         
         current_price = float(df['Close'].values[-1])
         current_rsi = float(df['RSI'].values[-1])
@@ -44,38 +50,34 @@ try:
         elif current_rsi > 65: action = "SELL"
 
         # Display Metrics
+        st.subheader(f"📊 {asset_choice} Live Status")
         col1, col2, col3 = st.columns(3)
-        col1.metric("BTC Price", f"${current_price:,.2f}")
-        col2.metric("RSI", f"{current_rsi:.2f}")
-        col3.metric("Current Signal", action)
+        col1.metric("Current Price", f"${current_price:,.2f}")
+        col2.metric("RSI (14)", f"{current_rsi:.2f}")
+        col3.metric("Signal", action)
 
-        # Signal တွေ့လျှင် သိမ်းဆည်းပြီး Telegram ပို့ခြင်း
+        # Signal Logic & Telegram
         if action != "WAIT":
-            if "last_action" not in st.session_state or st.session_state.last_action != action:
+            # Signal အသစ်ဖြစ်မှ ပို့ရန် (Pair အလိုက်ခွဲသိမ်းရန်)
+            history_key = f"last_{ticker_symbol}"
+            if history_key not in st.session_state or st.session_state[history_key] != action:
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                # History ထဲသို့ ထည့်ခြင်း
-                st.session_state.history.append({"Time": now, "Action": action, "Price": current_price})
+                st.session_state.history.append({"Asset": ticker_symbol, "Time": now, "Action": action, "Price": current_price})
                 
                 async def send_msg():
                     bot = Bot(token=TOKEN)
-                    text = f"🚨 **AUTO ALERT**\n🎯 Action: {action}\n💰 Price: ${current_price:,.2f}\n⏰ Time: {now}"
+                    text = f"🚨 **ASSET ALERT: {ticker_symbol}**\n🎯 Action: {action}\n💰 Price: ${current_price:,.2f}\n📈 RSI: {current_rsi:.2f}"
                     await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode='Markdown')
                 
                 asyncio.run(send_msg())
-                st.session_state.last_action = action
-        else:
-            st.session_state.last_action = "WAIT"
-
-        # --- Daily Orders Win/Loss Section ---
-        st.subheader("📊 Daily Order History")
+                st.session_state[history_key] = action
+        
+        # Daily History Table
+        st.subheader("📅 Order History (All Assets)")
         if st.session_state.history:
-            history_df = pd.DataFrame(st.session_state.history)
-            st.table(history_df.tail(10)) # နောက်ဆုံး Signal ၁၀ ခုကို ပြခြင်း
-            
-            # Win/Loss တွက်ချက်ရန် ခလုတ် (Manual update for result)
-            st.info("မှတ်ချက်: အမြတ်/အရှုံးကို လက်ရှိဈေးနှုန်းနှင့် နှိုင်းယှဉ်တွက်ချက်ထားခြင်း ဖြစ်သည်။")
+            st.table(pd.DataFrame(st.session_state.history).tail(10))
         else:
             st.write("ယနေ့အတွက် Signal မရှိသေးပါ။")
 
 except Exception as e:
-    st.error(f"System Error: {e}")
+    st.warning("ဒေတာ ရယူရန် ကြိုးစားနေဆဲ ဖြစ်ပါသည်။")
