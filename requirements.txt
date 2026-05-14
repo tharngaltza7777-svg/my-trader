@@ -1,0 +1,8 @@
+streamlit
+ccxt
+pandas
+numpy
+qiskit
+qiskit-aer
+python-telegram-bot
+httpx
