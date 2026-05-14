@@ -1,6 +1,8 @@
 streamlit
+streamlit-autorefresh
 yfinance
 pandas
+pandas_ta
 numpy
 qiskit
 qiskit-aer
