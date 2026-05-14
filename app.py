@@ -25,14 +25,28 @@ async def send_signal(symbol, action, price, q_score):
     await bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode='Markdown')
 
 st.title("Myanmar Quantum Trader")
+
 if st.button("ဈေးကွက်စစ်ဆေးမည်"):
-    with st.spinner("Analyzing..."):
-        ex = ccxt.binance({'options': {'defaultType': 'future'}})
-        data = ex.fetch_ohlcv("XAU/USDT", timeframe='1h', limit=2)
-        price = data[-1][4]
-        q_score = run_quantum_logic(50)
-        action = "BUY" if q_score > 0.55 else "SELL" if q_score < 0.45 else "WAIT"
-        st.write(f"လက်ရှိရွှေဈေး: ${price}")
-        if action != "WAIT":
-            asyncio.run(send_signal("GOLD", action, price, q_score))
-            st.success("Telegram ကို Signal ပို့လိုက်ပါပြီ!")
+    with st.spinner("ဈေးကွက်ကို လေ့လာနေပါသည်..."):
+        try:
+            # Binance အစား Bybit ကို အသုံးပြုထားပါသည် (Location error ကင်းဝေးစေရန်)
+            ex = ccxt.bybit()
+            # BTC/USDT ဈေးနှုန်းကို ရယူခြင်း
+            ticker = ex.fetch_ticker("BTC/USDT")
+            price = ticker['last']
+            
+            # Quantum Logic တွက်ချက်ခြင်း
+            q_score = run_quantum_logic(50)
+            action = "BUY" if q_score > 0.55 else "SELL" if q_score < 0.45 else "WAIT"
+            
+            st.metric(label="BTC Price", value=f"${price:,.2f}")
+            st.write(f"Quantum Probability Score: {q_score:.2%}")
+            
+            if action != "WAIT":
+                asyncio.run(send_signal("BTC", action, price, q_score))
+                st.success(f"Signal ({action}) ကို Telegram သို့ ပို့ဆောင်ပြီးပါပြီ!")
+            else:
+                st.warning("ဈေးကွက်က တန့်နေသဖြင့် Signal မထုတ်ပေးသေးပါ။")
+                
+        except Exception as e:
+            st.error(f"ချိတ်ဆက်မှု အဆင်မပြေပါ: {e}")
