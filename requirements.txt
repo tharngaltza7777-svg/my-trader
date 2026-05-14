@@ -4,7 +4,5 @@ yfinance
 pandas
 pandas-ta
 numpy
-qiskit
-qiskit-aer
 python-telegram-bot
 httpx
