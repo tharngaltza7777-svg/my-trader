@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 import asyncio
 from telegram import Bot
@@ -14,61 +13,58 @@ CHAT_ID = "8344079627"
 # ၃ မိနစ်တစ်ခါ Auto-refresh
 st_autorefresh(interval=3 * 60 * 1000, key="bot_loop")
 
-def quantum_math_logic(rsi_value, ma_trend):
-    # Quantum Probability ကို Mathematical Formula ဖြင့် အစားထိုးခြင်း
-    # ဤနည်းသည် ပိုမိုမြန်ဆန်ပြီး Error ကင်းစင်ပါသည်
-    prob = (rsi_value / 100)
-    if ma_trend > 0: prob -= 0.1
-    else: prob += 0.1
-    return np.clip(prob, 0, 1)
+# RSI ကို Library မလိုဘဲ ကိုယ်တိုင်တွက်ချက်သည့် Function
+def calculate_rsi(data, window=14):
+    delta = data.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
-async def send_instant_signal(symbol, action, price, rsi, q_score):
-    bot = Bot(token=TOKEN)
-    msg = (f"🚨 **INSTANT QUANTUM ALERT**\n"
-           f"🪙 {symbol} | ✨ Action: **{action}**\n"
-           f"💰 Price: ${price:,.2f}\n"
-           f"📈 RSI: {rsi:.2f}\n"
-           f"🔮 Q-Score: {q_score:.2%}\n"
-           f"⏰ Status: Live & Auto-checking")
-    await bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode='Markdown')
-
-st.title("🤖 Master Auto-Pilot Trader V2")
-st.info("စနစ်သည် ၃ မိနစ်တစ်ခါ ဈေးကွက်ကို အလိုအလျောက် စစ်ဆေးနေပါသည် (ပေါ့ပါးသော Version)")
+st.title("🤖 Master Auto-Pilot Trader V3")
+st.info("စနစ်သည် ၃ မိနစ်တစ်ခါ ဈေးကွက်ကို အလိုအလျောက် စစ်ဆေးနေပါသည်")
 
 try:
+    # ဈေးနှုန်းဒေတာ ရယူခြင်း
     df = yf.download("BTC-USD", period="1d", interval="1m")
+    
     if not df.empty:
-        df['RSI'] = ta.rsi(df['Close'], length=14)
-        df['SMA'] = ta.sma(df['Close'], length=20)
+        # RSI တွက်ခြင်း
+        df['RSI'] = calculate_rsi(df['Close'])
+        # Simple Moving Average တွက်ခြင်း
+        df['SMA'] = df['Close'].rolling(window=20).mean()
         
-        current_price = df['Close'].iloc[-1].item()
-        current_rsi = df['RSI'].iloc[-1].item()
-        ma_trend = 1 if current_price > df['SMA'].iloc[-1].item() else -1
-        
-        q_score = quantum_math_logic(current_rsi, ma_trend)
+        current_price = float(df['Close'].iloc[-1])
+        current_rsi = float(df['RSI'].iloc[-1])
+        sma_val = float(df['SMA'].iloc[-1])
         
         # Strategy Logic
-        if current_rsi < 35 and q_score > 0.55:
+        action = "WAIT"
+        if current_rsi < 35 and current_price > sma_val:
             action = "BUY"
-        elif current_rsi > 65 and q_score < 0.45:
+        elif current_rsi > 65 and current_price < sma_val:
             action = "SELL"
-        else:
-            action = "WAIT"
-        
-        # Display
+
+        # Dashboard Display
         c1, c2, c3 = st.columns(3)
-        c1.metric("BTC", f"${current_price:,.2f}")
-        c2.metric("RSI", f"{current_rsi:.1f}")
-        c3.metric("Action", action)
-        
+        c1.metric("BTC Price", f"${current_price:,.2f}")
+        c2.metric("RSI", f"{current_rsi:.2f}")
+        c3.metric("Signal", action)
+
+        # Telegram Signal Sending
         if action != "WAIT":
             if "last_action" not in st.session_state or st.session_state.last_action != action:
-                asyncio.run(send_instant_signal("BTC/USD", action, current_price, current_rsi, q_score))
+                async def send_msg():
+                    bot = Bot(token=TOKEN)
+                    text = f"🚨 **AUTO-PILOT ALERT**\n🪙 BTC/USD\n✨ Action: {action}\n💰 Price: ${current_price:,.2f}\n📈 RSI: {current_rsi:.2f}"
+                    await bot.send_message(chat_id=CHAT_ID, text=text, parse_mode='Markdown')
+                
+                asyncio.run(send_msg())
                 st.session_state.last_action = action
-                st.success(f"Signal အသစ်ကို Telegram သို့ ပို့လိုက်ပါပြီ!")
+                st.success("Signal ပို့ဆောင်ပြီးပါပြီ!")
         else:
-            st.write("ဈေးကွက်ကို စောင့်ကြည့်နေပါသည်...")
             st.session_state.last_action = "WAIT"
+            st.write("ဈေးကွက် အခြေအနေ စောင့်ကြည့်ဆဲ...")
 
 except Exception as e:
-    st.error(f"System Error: {e}")
+    st.error(f"ခေတ္တစောင့်ဆိုင်းပေးပါ၊ Data ရယူနေဆဲဖြစ်သည်... ({e})")
