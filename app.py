@@ -1,51 +1,83 @@
-from fastapi import FastAPI, Request
+import asyncio
+import logging
+from fastapi import FastAPI
 import requests
-import uvicorn
+import pandas as pd
+import pandas_ta as ta
+
+# --- [ ဆက်တင်များ အားလုံး ဖြည့်စွက်ပြီးသားဖြစ်သည် ] ---
+TELEGRAM_BOT_TOKEN = "8951243669:AAEJSVGQo3AMWvIorVYUvAIzoBDdFW-z07M"
+TELEGRAM_CHAT_ID = "8344079627"
+SYMBOL = "ETHUSDT"                              # စောင့်ကြည့်မယ့် Asset
+INTERVAL = "5m"                                 # ၅ မိနစ် Timeframe
+RSI_PERIOD = 14                                 # RSI Standard Period
+# --------------------------------------------------
 
 app = FastAPI()
+logging.basicConfig(level=logging.INFO)
 
-# သင့်ရဲ့ New Telegram Bot Config
-TOKEN = "8140108107:AAH1AEOF1pZzYRNkDDm1v4ylvBHC-IcQIhM"
-CHAT_ID = "8344079627"
+# Signal အထပ်ထပ်မတက်အောင် ကာကွယ်ရန် Variable
+last_signal = None  
+
+async def check_rsi_and_alert():
+    global last_signal
+    while True:
+        try:
+            # ၁။ Binance API မှ Live Candlestick Data လှမ်းဆွဲခြင်း
+            url = f"https://api.binance.com/api/v3/klines?symbol={SYMBOL}&interval={INTERVAL}&limit=100"
+            response = requests.get(url).json()
+            
+            # ၂။ Data Frame ပြင်ဆင်ခြင်း
+            df = pd.DataFrame(response, columns=[
+                'Open_time', 'Open', 'High', 'Low', 'Close', 'Volume', 
+                'Close_time', 'Quote_asset_volume', 'Number_of_trades', 
+                'Taker_buy_base_asset_volume', 'Taker_buy_quote_asset_volume', 'Ignore'
+            ])
+            df['Close'] = df['Close'].astype(float)
+            
+            # ၃။ pandas_ta သုံးပြီး RSI ကို ကိုယ်တိုင်တွက်ချက်ခြင်း
+            df['RSI'] = ta.rsi(df['Close'], length=RSI_PERIOD)
+            
+            # နောက်ဆုံးပိတ် ပိတ်သွားတဲ့ Candle ရဲ့ Live RSI နှင့် ပိတ်ဈေးကို ယူခြင်း
+            current_rsi = float(df['RSI'].iloc[-1])
+            current_price = float(df['Close'].iloc[-1])
+            
+            logging.info(f"Current RSI for {SYMBOL}: {current_rsi:.2f} | Price: {current_price}")
+            
+            # ၄။ Logic စစ်ဆေးပြီး Telegram သို့ Signal တိုက်ရိုက်ပို့ခြင်း
+            if current_rsi < 42 and last_signal != "BUY":
+                message = f"🚀 **REAL-TIME ETH ALERT**\n\n🟢 Action: **BUY**\n💰 Price: {current_price}\n📊 RSI (14): {current_rsi:.2f}\n\n🔒 Status: Automated via Polling Engine"
+                send_telegram_message(message)
+                last_signal = "BUY"
+                
+            elif current_rsi > 58 and last_signal != "SELL":
+                message = f"🚀 **REAL-TIME ETH ALERT**\n\n🔴 Action: **SELL**\n💰 Price: {current_price}\n📊 RSI (14): {current_rsi:.2f}\n\n🔒 Status: Automated via Polling Engine"
+                send_telegram_message(message)
+                last_signal = "SELL"
+                
+            # RSI က အလယ်ပိုင်း (၄၅ နှင့် ၅၅ ကြား) ပြန်ရောက်သွားမှ လမ်းကြောင်းအသစ် ပြန်ဖွင့်ပေးခြင်း
+            elif 45 < current_rsi < 55:
+                last_signal = None
+                
+        except Exception as e:
+            logging.error(f"Polling Engine Error: {e}")
+            
+        # ဈေးကွက်ကို မိနစ်တိုင်း စောင့်ကြည့်ရန် စက္ကန့် ၆၀ စောင့်ခိုင်းခြင်း
+        await asyncio.sleep(60)
+
+def send_telegram_message(text):
+    url = f"https://api.telegram.com/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Telegram Sending Error: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    # Render သို့မဟုတ် Koyeb Server စတက်တာနဲ့ Polling စနစ်ကို နောက်ကွယ်မှာ အလုပ်စခိုင်းထားခြင်း
+    asyncio.create_task(check_rsi_and_alert())
 
 @app.get("/")
 def home():
-    return {"status": "AI Agent Webhook Server is Live and Active"}
-
-@app.post("/webhook")
-async def tradingview_webhook(request: Request):
-    try:
-        # TradingView မှ ပို့လိုက်သော JSON data ကို လက်ခံခြင်း
-        data = await request.json()
-        
-        pair = data.get("pair", "Unknown Pair")
-        price = data.get("price", "0.00")
-        action = data.get("action", "HOLD")
-        rsi = data.get("rsi", "N/A")
-        
-        # RSI တန်ဖိုးကို ဒဿမ ၂ နေရာအဖြစ် ပြင်ဆင်ခြင်း
-        try:
-            rsi_val = f"{float(rsi):.2f}"
-        except:
-            rsi_val = str(rsi)
-            
-        # Telegram သို့ ပို့မည့် စာသားပုံစံ
-        msg = (f"🚀 **INSTANT AI TRADING SIGNAL**\n\n"
-               f"🎯 Asset: {pair}\n"
-               f"⚡ Action: {action}\n"
-               f"💵 Price: {price}\n"
-               f"📊 RSI (14): {rsi_val}\n\n"
-               f"🔒 Status: Execution Automated via GitHub Engine")
-               
-        # Telegram API သို့ တိုက်ရိုက် တင်ပို့ခြင်း
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "Markdown"}
-        response = requests.post(url, json=payload)
-        
-        return {"status": "success", "telegram_response": response.status_code}
-        
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    return {"status": "Polling Engine is Active and Scanning Markets!"}
